@@ -1,57 +1,63 @@
 import time
 import _config
+import csv
 
-# Selenium imports and setup/variables
+# Selenium imports
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 
 # Robocorp imports
-from robocorp.tasks import task, get_output_dir, setup
+from robocorp.tasks import task, setup
 from robocorp import browser
 from RPA.HTTP import HTTP
 from RPA.Tables import Tables
 from RPA.FileSystem import FileSystem
 
 
-# Variables for Robocorp
+"""Huom"""
+# Sivuja voi olla enemmän kuin 4 ? -> next nappi
+# Rivejä voi olle enenmmän kuin 4 ?
+
+# Robcorp variables
 page = browser.page()
 http = HTTP()
 tables = Tables()
 fs = FileSystem()
 
 # Variables for paths/urls
-output_dir_path = _config.OUTPUT_DIR_PATH
+ouput_dir_path = _config.OUTPUT_DIR_PATH
 website_url = _config.WEBSITE_URL
 
-# Selenium setup
+# Selenium variables
 driver = webdriver.Chrome()
-driver.get(website_url)
 
-"""Huom"""
-# Sivuja voi olla enemmän kuin 4 ? -> next nappi
-# Rivejä voi olle enenmmän kuin 4 ?
+# @setup(scope='session')
+# def before_all(tasks):
+#     "Runs before the tasks."
+#     print(f"kansion polku on: {ouput_dir_path}")
+#     delete_or_create_output_folder(ouput_dir_path)
 
-@setup(scope='session')
-def before_all(tasks):
-    """Deletes the output directory if it exists
-    and creates a new one"""
-    delete_or_create_output_directory(output_dir_path)
-    
+
+def delete_or_create_output_folder(directory):
+    "Deletes or creates the output folder"
+    if fs.does_directory_exist(directory):
+        fs.remove_directory(directory)
+        print("Kansio poistettu")
+    else:
+        fs.create_directory(directory)
+        print("Kansio luotu")
+
 
 @task
 def main():
+    """Goes to the website and downloads the invoices
+    builds and uploads csv file to the website"""
     open_website()
-    # download_invoices()
-    # click_button_start()
-    time.sleep(2)
-
-def delete_or_create_output_directory(directory):
-    """Deletes the directories if they exist"""
-    if fs.does_directory_exist(directory) == False:
-        fs.remove_directory(directory, recursive=True)
-    else:
-        fs.create_directory(directory)
-
+    arvot = download_invoices()
+    create_csv_file(arvot)
+    #click_button_start()
+    click_next_page()
+    print(arvot)
 
 def click_button_start():
     "Clicks the start button in website"
@@ -59,12 +65,17 @@ def click_button_start():
 
 def open_website():
     "Goes to the website"
-    browser.goto("https://rpachallengeocr.azurewebsites.net/")
+    driver.get(website_url)
+
+# pitää ladata kaikki jpg filut mitkä sivulla on sen jälkeen pitää
+# tsekata onko seuraava sivu olemassa jos on niin klikataan sitä ja sitten
+# taas ladata uudelta sivulta uudet jpg filut
+
 
 def download_invoices():
     "Downloads the invoice"
-    rows = driver.find_elements(By.XPATH, "/html/body/div/div/div[2]") 
-
+    rows = driver.find_elements(By.XPATH, "//table/tbody/tr")
+    invoice_list = []
     for row in rows:
         columns = row.find_elements(By.TAG_NAME, "td")
         invoice_number = columns[0].text
@@ -72,17 +83,31 @@ def download_invoices():
         due_date = columns[2].text
         download_link = columns[3].find_element(By.TAG_NAME, "a").get_attribute("href")
         http.download(download_link, f"output/{invoice_number}.jpg", overwrite=True)
+        invoice_list.append({"ID": invoice_id, "DueDate": due_date})
+    
+    return invoice_list
 
-        print(f"Invoice #: {invoice_number}, ID: {invoice_id}, Due Date: {due_date}, Download: {download_link}")
-        driver.quit()
+def create_csv_file(invoice_list):
+    "Creates a csv file from the invoices"
+    with open("output/invoices.csv", "w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=["ID","DueDate","InvoiceNo","InvoiceDate","CompanyName","TotalDue"])
+        writer.writeheader()
+        writer.writerows(invoice_list)
 
 
 def click_next_page():
     "Clicks the next page button"
-    if page.query_selector("[class'paginate_button next']") != None:
-        page.click("[class='paginate_button next']")
-    else:
-        pass
-
-def get_table_data():
-    pass
+    
+    while True:
+        download_invoices()
+        next_button = driver.find_elements(By.CSS_SELECTOR, "[class='paginate_button next']")
+        if next_button:
+            try:
+                next_button[0].click()
+                print("Next page exists")
+            except Exception as e:
+                print(f"Failed to click next page: {e}")
+                break
+        else:
+            print("Next page does not exist")
+            break
