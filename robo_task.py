@@ -6,9 +6,7 @@ import time
 import csv
 import datetime
 
-# Selenium imports
-from selenium import webdriver
-from selenium.webdriver.common.by import By
+from bs4 import BeautifulSoup
 
 # Robocorp imports
 from robocorp.tasks import task, setup
@@ -38,10 +36,6 @@ page = browser.page()
 invoices_path = _config.INVOICES_PATH
 website_url = _config.WEBSITE_URL
 
-# Selenium variables
-driver = webdriver.Chrome()
-
-
 
 @setup(scope='session')
 def before_all(tasks):
@@ -64,10 +58,11 @@ def main():
     """Goes to the website and downloads the invoices
     builds and uploads csv file to the website"""
     open_website()
-    # click_button_start()
+    click_button_start()
     page_info = click_next_page()
     list = combine_list(page_info)
     create_csv_file(list)
+    upload_files()
     # print(arvot)
     
 
@@ -77,7 +72,7 @@ def click_button_start():
 
 def open_website():
     "Goes to the website"
-    driver.get(website_url)
+    browser.goto(website_url)
 
 # pitää ladata kaikki jpg filut mitkä sivulla on sen jälkeen pitää
 # tsekata onko seuraava sivu olemassa jos on niin klikataan sitä ja sitten
@@ -85,24 +80,26 @@ def open_website():
 
 def read_page_info():
     "Downloads the invoice"
-    rows = driver.find_elements(By.XPATH, "//table/tbody/tr")
+    page_content = page.content()
+    soup = BeautifulSoup(page_content, 'html.parser')
+    rows = soup.select("table tbody tr")
     invoice_list = []
     date_now = datetime.datetime.now()
     date_ddmmyyyy = date_now.strftime("%d-%m-%Y")
     for row in rows:
-        columns = row.find_elements(By.TAG_NAME, "td")
+        columns = row.find_all("td")
         due_date_str = columns[2].text
         due_date = datetime.datetime.strptime(due_date_str, "%d-%m-%Y")
         if due_date <= date_now:
             invoice_number = columns[0].text
             invoice_id = columns[1].text
-            download_link = columns[3].find_element(By.TAG_NAME, "a").get_attribute("href")
+            download_link = columns[3].find("a")["href"]
             picture = f"output/invoices/{invoice_number}.jpg"
-            http.download(download_link, picture, overwrite=True)
+            url = f"{website_url}{download_link}"
+            http.download(url, picture, overwrite=True)
             invoice_list.append({"ID": invoice_id, "DueDate": due_date_str, "InvoiceNo": invoice_number, "Picture": picture})
 
     return invoice_list
-
 def combine_list(page_data):
     "Combines the list of invoices"
     combined_list = []
@@ -133,27 +130,22 @@ def create_csv_file(combined_list):
             print(row)
             writer.writerow({"ID": row[0], "DueDate": row[1], "InvoiceNo": row[2], "InvoiceDate": row[3], "CompanyName": row[4], "TotalDue": row[5]})
 
-# def upload_files():
-#     """Uploads csv file to the website"""
-#     page.locator("input[type='file']").upload_file("output/invoices.csv")
-#     page.click("button:has-text('Upload')")
-#     time.sleep(2)
+def upload_files():
+    """Uploads csv file to the website"""
+    page.locator("input[type='file']").set_input_files("output/invoices.csv")
+    time.sleep(15)
+    
 
 def click_next_page():
     "Clicks the next page button"
     page_info = []
     while True:
         page_info.append(read_page_info())
-        next_button = driver.find_elements(By.CSS_SELECTOR, "[class='paginate_button next']")
+        next_button = page.query_selector("[class='paginate_button next']")
         if next_button:
-            try:
-                next_button[0].click()
-                print("Next page exists")
-            except Exception as e:
-                print(f"Failed to click next page: {e}")
-                break
+            next_button.click()
+            print("Next page exists")
         else:
             print("Next page does not exist")
-            # upload_files()
             break
     return page_info # [[{},{}],[{},{}][{},{}]]
