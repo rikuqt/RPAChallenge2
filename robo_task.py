@@ -33,15 +33,15 @@ fs = FileSystem()
 page = browser.page()
 
 # Variables for paths/urls other
-invoices_path = _config.INVOICES_PATH
-website_url = _config.WEBSITE_URL
+INVOICES_PATH = _config.INVOICES_PATH
+WEBSITE_URL = _config.WEBSITE_URL
 
 
 @setup(scope='session')
 def before_all(tasks):
     "Runs before the tasks."
-    print(f"kansion polku on: {invoices_path}")
-    delete_or_create_output_folder(invoices_path)
+    print(f"kansion polku on: {INVOICES_PATH}")
+    delete_or_create_output_folder(INVOICES_PATH)
 
 
 def delete_or_create_output_folder(directory):
@@ -63,16 +63,18 @@ def main():
     list = combine_list(page_info)
     create_csv_file(list)
     upload_files()
+    time.sleep(10)
     # print(arvot)
     
 
 def click_button_start():
     "Clicks the start button in website"
     page.click("button:has-text('START')")
+    time.sleep(0.5)
 
 def open_website():
     "Goes to the website"
-    browser.goto(website_url)
+    browser.goto(WEBSITE_URL)
 
 # pitää ladata kaikki jpg filut mitkä sivulla on sen jälkeen pitää
 # tsekata onko seuraava sivu olemassa jos on niin klikataan sitä ja sitten
@@ -88,14 +90,14 @@ def read_page_info():
     date_ddmmyyyy = date_now.strftime("%d-%m-%Y")
     for row in rows:
         columns = row.find_all("td")
-        due_date_str = columns[2].text
+        due_date_str = columns[2].text.strip()
         due_date = datetime.datetime.strptime(due_date_str, "%d-%m-%Y")
         if due_date <= date_now:
-            invoice_number = columns[0].text
-            invoice_id = columns[1].text
+            invoice_number = columns[0].text.strip()
+            invoice_id = columns[1].text.strip()
             download_link = columns[3].find("a")["href"]
             picture = f"output/invoices/{invoice_number}.jpg"
-            url = f"{website_url}{download_link}"
+            url = f"{WEBSITE_URL}{download_link}"
             http.download(url, picture, overwrite=True)
             invoice_list.append({"ID": invoice_id, "DueDate": due_date_str, "InvoiceNo": invoice_number, "Picture": picture})
 
@@ -111,7 +113,7 @@ def combine_list(page_data):
     image_data = reading_image_info.iterate_images(dictionary_list)
 
     for i in range(len(dictionary_list)):
-        combined_list.append([dictionary_list[i]["ID"],dictionary_list[i]["DueDate"], image_data[i]["InvoiceNo"], image_data[i]["InvoiceDate"], image_data[i]["CompanyName"], image_data[i]["TotalDue"]])
+        combined_list.append([dictionary_list[i]["ID"],dictionary_list[i]["DueDate"],image_data[i]["InvoiceNo"],image_data[i]["InvoiceDate"],image_data[i]["CompanyName"],image_data[i]["TotalDue"]])
     print(f"LISTA {combined_list}")
 
     return combined_list
@@ -132,10 +134,8 @@ def create_csv_file(combined_list):
 
 def upload_files():
     """Uploads csv file to the website"""
-    page.locator("input[type='file']").set_input_files("output/invoices.csv")
-    time.sleep(15)
+    page.locator(selector="input[type='file']").set_input_files("output/invoices.csv")
     
-
 def click_next_page():
     "Clicks the next page button"
     page_info = []
